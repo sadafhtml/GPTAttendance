@@ -12,46 +12,42 @@ SUBJECTS_FILE = "subjects.csv"
 SESSION_FILE = "session.json"
 
 # ----------------------
-# BASIC FILE CHECKS
+# FILE CHECKS
 # ----------------------
-for file, name in [
+for file, label in [
     (CLASSES_FILE, "Classes"),
     (SUBJECTS_FILE, "Subjects"),
 ]:
     if not os.path.exists(file):
-        st.error(f"❌ {name} file missing. Contact Admin.")
+        st.error(f"❌ {label} file missing. Contact Admin.")
         st.stop()
 
 # ----------------------
-# LOAD DATA
+# LOAD CSVs
 # ----------------------
 classes = pd.read_csv(CLASSES_FILE)
 subjects = pd.read_csv(SUBJECTS_FILE)
 
-# Clean column names
+# Normalize columns
 classes.columns = classes.columns.str.strip()
 subjects.columns = subjects.columns.str.strip()
 
-# Required columns check
-required_class_cols = {"ClassID", "ClassName"}
-required_subject_cols = {"SubjectID", "SubjectName", "ClassID"}
-
-if not required_class_cols.issubset(classes.columns):
-    st.error("❌ classes.csv has invalid columns.")
+# Required columns
+if not {"ClassID", "ClassName"}.issubset(classes.columns):
+    st.error("❌ classes.csv has invalid structure.")
     st.stop()
 
-if not required_subject_cols.issubset(subjects.columns):
-    st.error("❌ subjects.csv has invalid columns.")
+if not {"SubjectID", "SubjectName", "ClassID"}.issubset(subjects.columns):
+    st.error("❌ subjects.csv has invalid structure.")
     st.stop()
 
-# ----------------------
-# CLEAN SUBJECT DATA (CRITICAL)
-# ----------------------
-subjects["SubjectName"] = subjects["SubjectName"].astype(str).str.strip()
-subjects["ClassID"] = subjects["ClassID"].astype(str).str.strip()
-
+# Clean values
 classes["ClassID"] = classes["ClassID"].astype(str).str.strip()
 classes["ClassName"] = classes["ClassName"].astype(str).str.strip()
+
+subjects["ClassID"] = subjects["ClassID"].astype(str).str.strip()
+subjects["SubjectName"] = subjects["SubjectName"].astype(str).str.strip()
+subjects["SubjectID"] = subjects["SubjectID"].astype(str).str.strip()
 
 # ----------------------
 # SELECT CLASS
@@ -64,18 +60,18 @@ class_name = st.selectbox(
 class_row = classes[classes["ClassName"] == class_name]
 
 if class_row.empty:
-    st.error("❌ Invalid class selection.")
+    st.error("❌ Invalid class selected.")
     st.stop()
 
-class_id = class_row.iloc[0]["ClassID"]
+class_id = str(class_row.iloc[0]["ClassID"])
 
 # ----------------------
-# FILTER SUBJECTS BY CLASS
+# FILTER SUBJECTS
 # ----------------------
 filtered_subjects = subjects[subjects["ClassID"] == class_id]
 
 if filtered_subjects.empty:
-    st.error("❌ No subjects mapped to this class. Contact Admin.")
+    st.error("❌ No subjects mapped to this class.")
     st.stop()
 
 # ----------------------
@@ -91,21 +87,21 @@ subject_row = filtered_subjects[
 ]
 
 if subject_row.empty:
-    st.error("❌ Subject not mapped to this class. Check subjects.csv.")
+    st.error("❌ Subject not mapped correctly.")
     st.stop()
 
-subject_id = subject_row.iloc[0]["SubjectID"]
+subject_id = str(subject_row.iloc[0]["SubjectID"])  # 🔥 FORCE STRING
 
 # ----------------------
-# SESSION CODE INPUT
+# SESSION CODE
 # ----------------------
 session_code = st.text_input(
     "Enter Session Code",
-    help="Share this code with students (valid for 30 minutes)"
-)
+    help="Valid for 30 minutes"
+).strip()
 
 if not session_code:
-    st.warning("Please enter a session code to activate.")
+    st.warning("Please enter a session code.")
     st.stop()
 
 # ----------------------
@@ -114,9 +110,9 @@ if not session_code:
 if st.button("🚀 Activate Session"):
 
     session_data = {
-        "session_code": session_code.strip(),
-        "class_id": class_id,
-        "subject_id": subject_id,
+        "session_code": str(session_code),
+        "class_id": str(class_id),
+        "subject_id": str(subject_id),
         "date": datetime.now().strftime("%Y-%m-%d"),
         "created_at": datetime.now().isoformat()
     }
@@ -125,6 +121,6 @@ if st.button("🚀 Activate Session"):
         json.dump(session_data, f, indent=2)
 
     st.success("✅ Session activated successfully!")
-    st.info("📢 Share the session code with students.")
+    st.info("📢 Share this session code with students")
 
     st.json(session_data)
