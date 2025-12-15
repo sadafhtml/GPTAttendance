@@ -17,7 +17,14 @@ class_id = classes[classes["ClassName"] == class_name]["ClassID"].values[0]
 # Filter subjects by class
 filtered_subjects = subjects[subjects["ClassID"] == class_id]
 subject_name = st.selectbox("Select Subject", filtered_subjects["SubjectName"])
-subject_id = filtered_subjects[filtered_subjects["SubjectName"] == subject_name]["SubjectID"].values[0]
+
+subject_row = filtered_subjects[filtered_subjects["SubjectName"] == subject_name]
+
+if subject_row.empty:
+    st.error("❌ Subject not mapped to this class. Please contact Admin.")
+    st.stop()
+
+subject_id = subject_row.iloc[0]["SubjectID"]
 
 # Session code input
 session_code = st.text_input("Enter Session Code (announce to students)")
