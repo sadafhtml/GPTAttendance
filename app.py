@@ -76,34 +76,36 @@ else:
 
 today = datetime.now().strftime("%Y-%m-%d")
 
-# Prevent duplicate attendance
-duplicate = (
-    (attendance["Date"] == today) &
-    (attendance["ClassID"] == session["class_id"]) &
-    (attendance["SubjectID"] == session["subject_id"]) &
-    (attendance["SessionCode"] == session["session_code"]) &
-    (attendance["RollNumber"] == roll)
-).any()
-
-if duplicate:
-    st.error("❌ Attendance already marked for this session")
-    st.stop()
-
-# ----------------------
-# SUBMIT ATTENDANCE
-# ----------------------
+# --- On submit button ---
 if st.button("✅ Submit Attendance"):
-    new_row = {
-        "Date": today,
-        "ClassID": session["class_id"],
-        "SubjectID": session["subject_id"],
-        "SessionCode": session["session_code"],
-        "RollNumber": roll,
-        "StudentName": student["StudentName"],
-        "EnrollmentNumber": student["EnrollmentNumber"]
-    }
 
-    attendance = pd.concat([attendance, pd.DataFrame([new_row])])
-    attendance.to_csv(ATTENDANCE_FILE, index=False)
+    # Re-load attendance to prevent duplicates if file changed
+    if os.path.exists(ATTENDANCE_FILE):
+        attendance = pd.read_csv(ATTENDANCE_FILE)
 
-    st.success("🎉 Attendance marked successfully")
+    # Check for duplicate just before writing
+    duplicate = (
+        (attendance["Date"] == today) &
+        (attendance["ClassID"] == session["class_id"]) &
+        (attendance["SubjectID"] == session["subject_id"]) &
+        (attendance["SessionCode"] == session["session_code"]) &
+        (attendance["RollNumber"] == roll)
+    ).any()
+
+    if duplicate:
+        st.error("❌ Attendance already marked for this session")
+    else:
+        new_row = {
+            "Date": today,
+            "ClassID": session["class_id"],
+            "SubjectID": session["subject_id"],
+            "SessionCode": session["session_code"],
+            "RollNumber": roll,
+            "StudentName": student["StudentName"],
+            "EnrollmentNumber": student["EnrollmentNumber"]
+        }
+
+        # Append row and save
+        attendance = pd.concat([attendance, pd.DataFrame([new_row])])
+        attendance.to_csv(ATTENDANCE_FILE, index=False)
+        st.success("🎉 Attendance marked successfully")
