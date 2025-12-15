@@ -10,10 +10,10 @@ st.title("🧑‍🎓 Student Attendance")
 # ----------------------
 # LOAD ACTIVE SESSION
 # ----------------------
+SESSION_FILE = "session.json"
 CLASSES_FILE = os.path.join(os.getcwd(), "classes.csv")
 SUBJECTS_FILE = os.path.join(os.getcwd(), "subjects.csv")
 ATTENDANCE_FILE = os.path.join(os.getcwd(), "attendance.csv")
-SESSION_FILE = os.path.join(os.getcwd(), "session.json")
 STUDENTS_FILE = os.path.join(os.getcwd(), "students.xlsx")
 SESSION_VALIDITY = 30  # minutes
 
