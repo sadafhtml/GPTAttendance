@@ -76,8 +76,12 @@ else:
 
 today = datetime.now().strftime("%Y-%m-%d")
 
+# --- Initialize session_state flag ---
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
+
 # --- On submit button ---
-if st.button("✅ Submit Attendance"):
+if st.button("✅ Submit Attendance") and not st.session_state.submitted:
 
     # Re-load attendance to prevent duplicates if file changed
     if os.path.exists(ATTENDANCE_FILE):
