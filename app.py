@@ -94,6 +94,7 @@ if st.button("✅ Submit Attendance"):
 
     if duplicate:
         st.error("❌ Attendance already marked for this session")
+        st.session_state.submitted = True  # mark as submitted
     else:
         new_row = {
             "Date": today,
@@ -109,3 +110,8 @@ if st.button("✅ Submit Attendance"):
         attendance = pd.concat([attendance, pd.DataFrame([new_row])])
         attendance.to_csv(ATTENDANCE_FILE, index=False)
         st.success("🎉 Attendance marked successfully")
+        st.session_state.submitted = True  # mark as submitted
+
+# --- Disable button after submission ---
+if st.session_state.submitted:
+    st.warning("✅ You have already submitted attendance for this session")
