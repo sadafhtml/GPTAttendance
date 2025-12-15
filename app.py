@@ -4,38 +4,29 @@ from datetime import datetime, timedelta
 import json
 import os
 
-# ----------------------
-# PAGE SETUP
-# ----------------------
 st.set_page_config(page_title="Student Attendance", layout="centered")
 st.title("🧑‍🎓 Student Attendance")
 
-BASE_DIR = os.getcwd()
-
-SESSION_FILE = os.path.join(BASE_DIR, "session.json")
-ATTENDANCE_FILE = os.path.join(BASE_DIR, "attendance.csv")
-STUDENTS_FILE = os.path.join(BASE_DIR, "Students.xlsx")
-
+SESSION_FILE = "session.json"
+ATTENDANCE_FILE = "attendance.csv"
+STUDENTS_FILE = "Students.xlsx"
 SESSION_VALIDITY = 30  # minutes
 
 # ----------------------
-# LOAD SESSION SAFELY
+# SESSION STATE LOCK
 # ----------------------
-if not os.path.exists(SESSION_FILE) or os.stat(SESSION_FILE).st_size == 0:
-    st.error("⛔ No active session. Please contact your teacher.")
+if "blocked" not in st.session_state:
+    st.session_state.blocked = False
+
+# ----------------------
+# LOAD ACTIVE SESSION
+# ----------------------
+if not os.path.exists(SESSION_FILE):
+    st.error("⛔ No active session.")
     st.stop()
 
-try:
-    with open(SESSION_FILE, "r", encoding="utf-8") as f:
-        session = json.load(f)
-except Exception:
-    st.error("⛔ Session file corrupted. Contact Admin.")
-    st.stop()
-
-required_keys = {"session_code", "class_id", "subject_id", "created_at"}
-if not required_keys.issubset(session.keys()):
-    st.error("⛔ Invalid session data. Contact Admin.")
-    st.stop()
+with open(SESSION_FILE, "r") as f:
+    session = json.load(f)
 
 created_time = datetime.fromisoformat(session["created_at"])
 if datetime.now() > created_time + timedelta(minutes=SESSION_VALIDITY):
@@ -43,68 +34,55 @@ if datetime.now() > created_time + timedelta(minutes=SESSION_VALIDITY):
     st.stop()
 
 # ----------------------
-# SESSION CODE INPUT
+# SESSION CODE
 # ----------------------
 entered_code = st.text_input("Enter Session Code")
 
 if entered_code != session["session_code"]:
+    st.warning("❗ Invalid session code")
     st.stop()
 
 # ----------------------
 # LOAD STUDENTS
 # ----------------------
 if not os.path.exists(STUDENTS_FILE):
-    st.error("❌ Students file not found. Contact Admin.")
+    st.error("❌ Students file missing.")
     st.stop()
 
 students = pd.read_excel(STUDENTS_FILE)
+filtered = students[students["ClassID"] == session["class_id"]]
 
-# Normalize column names (VERY IMPORTANT)
-students.columns = students.columns.str.strip().str.replace(" ", "")
-
-required_student_cols = {"RollNumber", "StudentName", "EnrollmentNumber", "ClassID"}
-if not required_student_cols.issubset(students.columns):
-    st.error("❌ Students file columns are incorrect.")
-    st.stop()
-
-filtered_students = students[students["ClassID"] == session["class_id"]]
-
-if filtered_students.empty:
-    st.warning("No students found for this class.")
+if filtered.empty:
+    st.error("No students for this class.")
     st.stop()
 
 # ----------------------
-# STUDENT SELECTION
+# STUDENT SELECT
 # ----------------------
-roll = st.selectbox(
-    "Select Your Roll Number",
-    filtered_students["RollNumber"].astype(str)
-)
-
-student = filtered_students[
-    filtered_students["RollNumber"].astype(str) == roll
-].iloc[0]
+roll = st.selectbox("Select Roll Number", filtered["RollNumber"].astype(str))
+student = filtered[filtered["RollNumber"].astype(str) == roll].iloc[0]
 
 st.text_input("Student Name", student["StudentName"], disabled=True)
 st.text_input("Enrollment Number", student["EnrollmentNumber"], disabled=True)
 
-# ----------------------
-# LOAD ATTENDANCE
-# ----------------------
-if os.path.exists(ATTENDANCE_FILE):
-    attendance = pd.read_csv(ATTENDANCE_FILE)
-else:
-    attendance = pd.DataFrame(columns=[
-        "Date", "ClassID", "SubjectID", "SessionCode",
-        "RollNumber", "StudentName", "EnrollmentNumber"
-    ])
-
 today = datetime.now().strftime("%Y-%m-%d")
 
 # ----------------------
-# CHECK IF ALREADY SUBMITTED (CSV-LEVEL LOCK)
+# LOAD ATTENDANCE
 # ----------------------
-already_submitted = (
+attendance = (
+    pd.read_csv(ATTENDANCE_FILE)
+    if os.path.exists(ATTENDANCE_FILE)
+    else pd.DataFrame(columns=[
+        "Date","ClassID","SubjectID","SessionCode",
+        "RollNumber","StudentName","EnrollmentNumber"
+    ])
+)
+
+# ----------------------
+# HARD DUPLICATE CHECK (BEFORE BUTTON)
+# ----------------------
+already_marked = (
     (attendance["Date"] == today) &
     (attendance["ClassID"] == session["class_id"]) &
     (attendance["SubjectID"] == session["subject_id"]) &
@@ -112,30 +90,14 @@ already_submitted = (
     (attendance["RollNumber"].astype(str) == roll)
 ).any()
 
-if already_submitted:
-    st.success("✅ Attendance already submitted for this session.")
+if already_marked:
+    st.success("✅ Attendance already submitted.")
     st.stop()
 
 # ----------------------
-# SUBMIT BUTTON (HARD BLOCK)
+# SUBMIT
 # ----------------------
-submit = st.button("✅ Submit Attendance")
-
-if submit:
-    # Reload CSV again (double safety)
-    attendance = pd.read_csv(ATTENDANCE_FILE) if os.path.exists(ATTENDANCE_FILE) else attendance
-
-    duplicate = (
-        (attendance["Date"] == today) &
-        (attendance["ClassID"] == session["class_id"]) &
-        (attendance["SubjectID"] == session["subject_id"]) &
-        (attendance["SessionCode"] == session["session_code"]) &
-        (attendance["RollNumber"].astype(str) == roll)
-    ).any()
-
-    if duplicate:
-        st.error("❌ Attendance already marked.")
-        st.stop()
+if st.button("✅ Submit Attendance"):
 
     new_row = {
         "Date": today,
