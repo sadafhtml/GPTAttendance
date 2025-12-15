@@ -14,7 +14,7 @@ SESSION_FILE = "session.json"
 CLASSES_FILE = os.path.join(os.getcwd(), "classes.csv")
 SUBJECTS_FILE = os.path.join(os.getcwd(), "subjects.csv")
 ATTENDANCE_FILE = os.path.join(os.getcwd(), "attendance.csv")
-STUDENTS_FILE = os.path.join(os.getcwd(), "students.xlsx")
+STUDENTS_FILE = os.path.join(os.getcwd(), "Students.xlsx")
 SESSION_VALIDITY = 30  # minutes
 
 if not os.path.exists(SESSION_FILE):
