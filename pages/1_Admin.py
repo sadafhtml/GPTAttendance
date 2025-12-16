@@ -15,18 +15,25 @@ SUBJECTS_FILE = "subjects.csv"
 
 # ---------------- ADMIN LOGIN ----------------
 ADMIN_PASSWORD = "admin123"
-
 pwd = st.text_input("Enter Admin Password", type="password")
 if pwd != ADMIN_PASSWORD:
     st.stop()
 
 st.success("✅ Logged in as Admin")
 
-# ---------------- SAFE LOADERS ----------------
-def load_csv(path, columns):
+# ---------------- SAFE LOAD ----------------
+def load_csv(path, required_cols):
     if os.path.exists(path):
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=columns)
+        df = pd.read_csv(path)
+    else:
+        df = pd.DataFrame()
+
+    # force columns
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = ""
+
+    return df[required_cols]
 
 sessions = load_csv(
     SESSIONS_FILE,
@@ -41,15 +48,18 @@ attendance = load_csv(
 classes = load_csv(CLASSES_FILE, ["ClassID","ClassName"])
 subjects = load_csv(SUBJECTS_FILE, ["SubjectID","SubjectName","ClassID"])
 
-# ---------------- AUTO-EXPIRE SESSIONS ----------------
+# ---------------- AUTO EXPIRE SESSIONS ----------------
 now = datetime.now()
 
-if not sessions.empty:
-    def check_active(row):
+def is_active(row):
+    try:
         created = datetime.fromisoformat(row["CreatedAt"])
         return now <= created + timedelta(minutes=int(row["ExpiryMinutes"]))
+    except:
+        return False
 
-    sessions["Active"] = sessions.apply(check_active, axis=1)
+if not sessions.empty:
+    sessions["Active"] = sessions.apply(is_active, axis=1)
     sessions.to_csv(SESSIONS_FILE, index=False)
 
 # ===================== TABS =====================
@@ -60,20 +70,31 @@ tab1, tab2, tab3 = st.tabs([
 ])
 
 # ==================================================
-# 📌 TAB 1 – SESSIONS (IMPROVED)
+# 📌 TAB 1 – SESSIONS
 # ==================================================
 with tab1:
     st.subheader("All Sessions")
 
     if sessions.empty:
-        st.info("No sessions found.")
+        st.info("No sessions available.")
         st.stop()
 
-    # Merge for display
-    view = sessions.merge(subjects, on="SubjectID", how="left")
-    view = view.merge(classes, on="ClassID", how="left")
+    view = sessions.copy()
 
-    # Reorder columns (SessionCode FIRST)
+    # Merge safely
+    if "SubjectID" in view.columns:
+        view = view.merge(subjects, on="SubjectID", how="left")
+
+    if "ClassID" in view.columns:
+        view = view.merge(classes, on="ClassID", how="left")
+
+    # Fill missing names
+    if "SubjectName" not in view.columns:
+        view["SubjectName"] = "—"
+    if "ClassName" not in view.columns:
+        view["ClassName"] = "—"
+
+    # Reorder columns
     view = view[[
         "SessionCode",
         "SubjectName",
@@ -92,11 +113,11 @@ with tab1:
     active_sessions = view[view["Active"] == True]
 
     if active_sessions.empty:
-        st.info("No active sessions to deactivate.")
+        st.info("No active sessions.")
         st.stop()
 
     selected_code = st.selectbox(
-        "Select Session Code to Deactivate",
+        "Select Session Code",
         active_sessions["SessionCode"]
     )
 
@@ -104,9 +125,8 @@ with tab1:
         sessions.loc[
             sessions["SessionCode"] == selected_code, "Active"
         ] = False
-
         sessions.to_csv(SESSIONS_FILE, index=False)
-        st.success(f"Session `{selected_code}` deactivated")
+        st.success(f"Session {selected_code} deactivated")
         st.rerun()
 
 # ==================================================
@@ -116,7 +136,7 @@ with tab2:
     st.subheader("Attendance Reports")
 
     if attendance.empty:
-        st.info("No attendance data available.")
+        st.info("No attendance recorded.")
         st.stop()
 
     report = attendance.merge(sessions, on="SessionID", how="left")
@@ -133,10 +153,9 @@ with tab2:
 
     st.dataframe(report, use_container_width=True)
 
-    csv = report.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "⬇️ Download Attendance CSV",
-        csv,
+        "⬇️ Download CSV",
+        report.to_csv(index=False).encode("utf-8"),
         "attendance_report.csv",
         "text/csv"
     )
@@ -145,12 +164,9 @@ with tab2:
 # 🎓 TAB 3 – STUDENTS
 # ==================================================
 with tab3:
-    st.subheader("Students Master Data")
+    st.subheader("Students Master")
 
     if not os.path.exists(STUDENTS_FILE):
         st.error("Students.xlsx not found")
     else:
-        students = pd.read_excel(STUDENTS_FILE)
-        st.dataframe(students, use_container_width=True)
-
-        st.info("✏️ Edit students via Excel file")
+        st.dataframe(pd.read_excel(STUDENTS_FILE), use_container_width=True)
