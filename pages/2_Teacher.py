@@ -156,12 +156,12 @@ else:
 
 # ================= ATTENDANCE REPORT =================
 st.divider()
-st.subheader("📊 Attendance Report (Subject-wise)")
+st.subheader("📊 Date-wise Attendance Report (Till Date)")
 
 rep_class = st.selectbox(
     "Select Class",
     classes["ClassName"].tolist(),
-    key="report_class"
+    key="rep_class"
 )
 
 rep_class_id = classes.loc[
@@ -171,79 +171,112 @@ rep_class_id = classes.loc[
 rep_subjects = subjects[subjects["ClassID"] == rep_class_id]
 
 if rep_subjects.empty:
-    st.info("No subjects")
+    st.warning("No subjects mapped")
     st.stop()
 
 rep_subject = st.selectbox(
     "Select Subject",
     rep_subjects["SubjectName"].tolist(),
-    key="report_subject"
+    key="rep_subject"
 )
 
 rep_subject_id = rep_subjects.loc[
     rep_subjects["SubjectName"] == rep_subject, "SubjectID"
 ].values[0]
 
-rep_sessions = sessions[
+# ---- ALL sessions till date for this teacher + subject
+subject_sessions = sessions[
     (sessions["TeacherID"] == teacher["TeacherID"]) &
     (sessions["ClassID"] == rep_class_id) &
     (sessions["SubjectID"] == rep_subject_id)
-]
+].copy()
 
-if rep_sessions.empty:
-    st.warning("No sessions for this subject")
+if subject_sessions.empty:
+    st.warning("No sessions conducted yet")
     st.stop()
 
-rep_att = attendance.merge(
-    rep_sessions[["SessionID","CreatedAt"]],
-    on="SessionID",
-    how="inner"
-)
+# ---- sort by time
+subject_sessions["SessionDate"] = pd.to_datetime(
+    subject_sessions["CreatedAt"]
+).dt.date.astype(str)
 
-rep_att["Date"] = pd.to_datetime(rep_att["CreatedAt"]).dt.date.astype(str)
+subject_sessions = subject_sessions.sort_values("CreatedAt")
 
+session_ids = subject_sessions["SessionID"].tolist()
+session_dates = subject_sessions["SessionDate"].tolist()
+
+# ---- students of this class
 stu = students[students["ClassID"].astype(str) == str(rep_class_id)]
 
-dates = sorted(rep_att["Date"].unique())
+if stu.empty:
+    st.warning("No students in this class")
+    st.stop()
 
 rows = []
+
 for i, s in stu.iterrows():
     row = {
-        "Sr No": len(rows)+1,
+        "Sr No": len(rows) + 1,
         "RollNumber": s["RollNumber"],
         "Enrollment": s["EnrollmentNumber"],
         "Name": s["StudentName"]
     }
-    present = 0
-    for d in dates:
-        mark = (
-            (rep_att["RollNumber"].astype(str) == str(s["RollNumber"])) &
-            (rep_att["Date"] == d)
-        ).any()
-        row[d] = "P" if mark else "A"
-        present += int(mark)
 
-    total = len(dates)
-    row["Total Present"] = present
-    row["% Attendance"] = round((present/total)*100, 1) if total else 0
+    present_count = 0
+
+    for sid, sdate in zip(session_ids, session_dates):
+        is_present = (
+            (attendance["SessionID"].astype(str) == str(sid)) &
+            (attendance["RollNumber"].astype(str) == str(s["RollNumber"]))
+        ).any()
+
+        row[sdate] = "P" if is_present else "A"
+        present_count += int(is_present)
+
+    total_sessions = len(session_ids)
+    row["Total Present"] = present_count
+    row["% Attendance"] = round((present_count / total_sessions) * 100, 2)
+
     rows.append(row)
 
 report_df = pd.DataFrame(rows)
 
-def highlight(val):
+# ---- highlight below 70%
+def highlight_low(val):
     try:
         return "background-color: #ffcccc" if float(val) < 70 else ""
     except:
         return ""
 
+# ================= PER-DATE TOTAL ROW =================
+
+total_row = {
+    "Sr No": "",
+    "RollNumber": "",
+    "Enrollment": "",
+    "Name": "TOTAL PRESENT"
+}
+
+for d in session_dates:
+    total_row[d] = (report_df[d] == "P").sum()
+
+total_row["Total Present"] = ""
+total_row["% Attendance"] = ""
+
+report_df = pd.concat(
+    [report_df, pd.DataFrame([total_row])],
+    ignore_index=True
+)
+
 st.dataframe(
-    report_df.style.applymap(highlight, subset=["% Attendance"]),
+    report_df.style.applymap(highlight_low, subset=["% Attendance"]),
     use_container_width=True
 )
 
 st.download_button(
-    "⬇️ Download Subject Attendance CSV",
+    "⬇️ Download Date-wise Attendance CSV",
     report_df.to_csv(index=False).encode("utf-8"),
-    f"{rep_class}_{rep_subject}_attendance.csv",
+    f"{rep_class}_{rep_subject}_datewise_attendance.csv",
     "text/csv"
 )
+
