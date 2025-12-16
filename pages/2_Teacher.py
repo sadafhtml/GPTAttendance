@@ -4,7 +4,16 @@ from datetime import datetime
 import uuid
 import os
 
-# Ensure sessions.csv exists and has all required columns
+st.set_page_config(page_title="Teacher Panel", layout="wide")
+st.title("👩‍🏫 Teacher Panel")
+
+# ---------------- FILE PATHS ----------------
+TEACHERS_FILE = "teachers.csv"
+CLASSES_FILE = "classes.csv"
+SUBJECTS_FILE = "subjects.csv"
+SESSIONS_FILE = "sessions.csv"
+
+# ---------------- ENSURE SESSIONS FILE ----------------
 REQUIRED_COLUMNS = [
     "SessionID","TeacherID","ClassID","ClassName",
     "SubjectID","SubjectName","SessionCode",
@@ -15,35 +24,20 @@ if not os.path.exists(SESSIONS_FILE):
     pd.DataFrame(columns=REQUIRED_COLUMNS).to_csv(SESSIONS_FILE, index=False)
 
 sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
-
-# If any required column is missing, add it empty
 for col in REQUIRED_COLUMNS:
     if col not in sessions.columns:
         sessions[col] = ""
-
-st.set_page_config(page_title="Teacher Panel", layout="wide")
-st.title("👩‍🏫 Teacher Panel")
-
-# ---------------- FILE PATHS ----------------
-TEACHERS_FILE = "teachers.csv"
-CLASSES_FILE = "classes.csv"
-SUBJECTS_FILE = "subjects.csv"
-SESSIONS_FILE = "sessions.csv"
 
 # ---------------- TEACHER LOGIN ----------------
 if "teacher" not in st.session_state:
     st.session_state.teacher = None
 
-# --- Show login form if not logged in
 if st.session_state.teacher is None:
-
     if not os.path.exists(TEACHERS_FILE):
         st.error("❌ teachers.csv not found")
         st.stop()
 
     teachers = pd.read_csv(TEACHERS_FILE, dtype=str)
-
-    # Strip spaces
     for col in ["Email", "Password"]:
         teachers[col] = teachers[col].str.strip()
 
@@ -54,20 +48,16 @@ if st.session_state.teacher is None:
         email = email.strip()
         password = password.strip()
         match = teachers[
-            (teachers["Email"] == email) &
-            (teachers["Password"] == password)
+            (teachers["Email"] == email) & (teachers["Password"] == password)
         ]
-
         if match.empty:
             st.error("❌ Invalid credentials")
             st.stop()
-
         st.session_state.teacher = match.iloc[0].to_dict()
         st.experimental_rerun()
 
-    st.stop()  # stop here until login
+    st.stop()
 
-# ---------------- LOGGED IN ----------------
 teacher = st.session_state.teacher
 st.success(f"Welcome {teacher['TeacherName']}")
 
@@ -78,13 +68,10 @@ if st.button("🚪 Logout"):
 st.divider()
 
 # ---------------- LOAD MASTER DATA ----------------
-missing_files = False
 for file in [CLASSES_FILE, SUBJECTS_FILE]:
     if not os.path.exists(file):
         st.error(f"❌ Missing required file: {file}")
-        missing_files = True
-if missing_files:
-    st.stop()
+        st.stop()
 
 classes = pd.read_csv(CLASSES_FILE, dtype=str)
 subjects = pd.read_csv(SUBJECTS_FILE, dtype=str)
@@ -98,7 +85,6 @@ else:
     class_name = st.selectbox("Select Class", classes["ClassName"])
     class_id = classes.loc[classes["ClassName"] == class_name, "ClassID"].values[0]
 
-    # Filter subjects
     filtered_subjects = subjects[subjects["ClassID"] == class_id]
 
     if filtered_subjects.empty:
@@ -120,20 +106,15 @@ else:
         if not session_code.strip():
             st.error("❌ Session code cannot be empty")
             st.stop()
-
         if filtered_subjects.empty:
             st.error("❌ Cannot activate session without a subject")
             st.stop()
 
-        # Ensure sessions file exists
-        if not os.path.exists(SESSIONS_FILE):
-            pd.DataFrame(columns=[
-                "SessionID","TeacherID","ClassID","ClassName",
-                "SubjectID","SubjectName","SessionCode",
-                "CreatedAt","ExpiryMinutes","Active"
-            ]).to_csv(SESSIONS_FILE, index=False)
-
+        # Reload sessions and ensure all columns exist
         sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
+        for col in REQUIRED_COLUMNS:
+            if col not in sessions.columns:
+                sessions[col] = ""
 
         # Deactivate previous active session for this teacher/class/subject
         sessions.loc[
@@ -166,21 +147,22 @@ else:
 st.divider()
 st.subheader("🟢 My Active Sessions")
 
-if not os.path.exists(SESSIONS_FILE):
-    st.info("No sessions created yet.")
-else:
-    sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
-    my_sessions = sessions[
-        (sessions["TeacherID"] == teacher["TeacherID"]) &
-        (sessions["Active"] == "True")
-    ]
+sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
+for col in REQUIRED_COLUMNS:
+    if col not in sessions.columns:
+        sessions[col] = ""
 
-    if my_sessions.empty:
-        st.info("No active sessions")
-    else:
-        st.dataframe(
-            my_sessions[[
-                "SessionCode","ClassName","SubjectName","CreatedAt","ExpiryMinutes"
-            ]],
-            use_container_width=True
-        )
+my_sessions = sessions[
+    (sessions["TeacherID"] == teacher["TeacherID"]) &
+    (sessions["Active"] == "True")
+]
+
+if my_sessions.empty:
+    st.info("No active sessions")
+else:
+    st.dataframe(
+        my_sessions[[
+            "SessionCode","ClassName","SubjectName","CreatedAt","ExpiryMinutes"
+        ]],
+        use_container_width=True
+    )
