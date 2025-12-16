@@ -21,12 +21,13 @@ if pwd != ADMIN_PASSWORD:
 
 st.success("✅ Logged in as Admin")
 
-# ---------------- SAFE LOAD FUNCTION ----------------
+# ---------------- SAFE LOAD ----------------
 def load_csv(path, required_cols):
     if os.path.exists(path):
         df = pd.read_csv(path, dtype=str)
     else:
-        df = pd.DataFrame()
+        df = pd.DataFrame(columns=required_cols)
+
     for col in required_cols:
         if col not in df.columns:
             df[col] = ""
@@ -45,16 +46,22 @@ attendance = load_csv(
 classes = load_csv(CLASSES_FILE, ["ClassID","ClassName"])
 subjects = load_csv(SUBJECTS_FILE, ["SubjectID","SubjectName","ClassID"])
 
+# Ensure IDs are strings
+for df, col in [(sessions, "ClassID"), (sessions, "SubjectID")]:
+    df[col] = df[col].astype(str)
+
+for df, col in [(classes, "ClassID"), (subjects, "SubjectID"), (subjects, "ClassID")]:
+    df[col] = df[col].astype(str)
+
 # ---------------- AUTO EXPIRE SESSIONS ----------------
 now = datetime.now()
-def is_active(row):
-    try:
-        created = datetime.fromisoformat(row["CreatedAt"])
-        return now <= created + timedelta(minutes=int(row["ExpiryMinutes"]))
-    except:
-        return False
-
 if not sessions.empty:
+    def is_active(row):
+        try:
+            created = datetime.fromisoformat(row["CreatedAt"])
+            return now <= created + timedelta(minutes=int(row["ExpiryMinutes"]))
+        except:
+            return False
     sessions["Active"] = sessions.apply(is_active, axis=1)
     sessions.to_csv(SESSIONS_FILE, index=False)
 
@@ -70,23 +77,19 @@ tab1, tab2, tab3 = st.tabs([
 # ==================================================
 with tab1:
     st.subheader("All Sessions")
+
     if sessions.empty:
         st.info("No sessions available.")
         st.stop()
 
     view = sessions.copy()
 
-    # Merge safely with subjects and classes
-    if "SubjectID" in view.columns and not subjects.empty:
-        view = view.merge(subjects, on="SubjectID", how="left")
-    if "ClassID" in view.columns and not classes.empty:
-        view = view.merge(classes, on="ClassID", how="left")
+    # Merge with subjects and classes
+    view = pd.merge(view, subjects[["SubjectID","SubjectName"]], on="SubjectID", how="left")
+    view = pd.merge(view, classes[["ClassID","ClassName"]], on="ClassID", how="left")
 
-    # Fill missing names
-    if "SubjectName" not in view.columns:
-        view["SubjectName"] = "—"
-    if "ClassName" not in view.columns:
-        view["ClassName"] = "—"
+    view["SubjectName"].fillna("—", inplace=True)
+    view["ClassName"].fillna("—", inplace=True)
 
     # Reorder columns
     view = view[[
@@ -98,11 +101,14 @@ with tab1:
         "ExpiryMinutes",
         "Active"
     ]]
+
     st.dataframe(view, use_container_width=True)
 
     st.divider()
     st.subheader("⛔ Deactivate Session")
+
     active_sessions = view[view["Active"] == True]
+
     if active_sessions.empty:
         st.info("No active sessions.")
         st.stop()
@@ -111,8 +117,9 @@ with tab1:
         "Select Session Code",
         active_sessions["SessionCode"]
     )
+
     if st.button("Deactivate Selected Session"):
-        sessions.loc[sessions["SessionCode"] == selected_code, "Active"] = "False"
+        sessions.loc[sessions["SessionCode"] == selected_code, "Active"] = False
         sessions.to_csv(SESSIONS_FILE, index=False)
         st.success(f"Session {selected_code} deactivated")
         st.experimental_rerun()
@@ -122,23 +129,17 @@ with tab1:
 # ==================================================
 with tab2:
     st.subheader("Attendance Reports")
+
     if attendance.empty:
         st.info("No attendance recorded.")
         st.stop()
 
-    # Safe merge for report
-    report = attendance.copy()
-    if "SessionID" in report.columns and not sessions.empty:
-        report = report.merge(sessions, on="SessionID", how="left")
-    if "SubjectID" in report.columns and not subjects.empty:
-        report = report.merge(subjects, on="SubjectID", how="left")
-    if "ClassID" in report.columns and not classes.empty:
-        report = report.merge(classes, on="ClassID", how="left")
+    report = attendance.merge(sessions, on="SessionID", how="left")
+    report = report.merge(subjects[["SubjectID","SubjectName"]], on="SubjectID", how="left")
+    report = report.merge(classes[["ClassID","ClassName"]], on="ClassID", how="left")
 
-    # Fill missing columns
-    for col in ["SessionCode","SubjectName","ClassName"]:
-        if col not in report.columns:
-            report[col] = "—"
+    report["SubjectName"].fillna("—", inplace=True)
+    report["ClassName"].fillna("—", inplace=True)
 
     report = report[[
         "Date",
@@ -147,6 +148,7 @@ with tab2:
         "ClassName",
         "RollNumber"
     ]]
+
     st.dataframe(report, use_container_width=True)
 
     st.download_button(
@@ -161,6 +163,7 @@ with tab2:
 # ==================================================
 with tab3:
     st.subheader("Students Master")
+
     if not os.path.exists(STUDENTS_FILE):
         st.error("Students.xlsx not found")
     else:
