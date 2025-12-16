@@ -1,74 +1,50 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import uuid
 import os
 
 st.set_page_config(page_title="Teacher Panel", layout="centered")
-st.title("👩‍🏫 Teacher Attendance Panel")
+st.title("👩‍🏫 Teacher – Start Session")
 
+SESSIONS_FILE = "sessions.csv"
 CLASSES_FILE = "classes.csv"
 SUBJECTS_FILE = "subjects.csv"
-SESSIONS_FILE = "sessions.csv"
 
-# ----------------------
-# LOAD FILES
-# ----------------------
+# ---------- Load data ----------
 classes = pd.read_csv(CLASSES_FILE)
 subjects = pd.read_csv(SUBJECTS_FILE)
 
-classes["ClassID"] = classes["ClassID"].astype(str)
-subjects["ClassID"] = subjects["ClassID"].astype(str)
-subjects["SubjectID"] = subjects["SubjectID"].astype(str)
+class_name = st.selectbox("Select Class", classes["ClassName"])
+class_id = classes[classes["ClassName"] == class_name]["ClassID"].iloc[0]
 
-# ----------------------
-# SELECT CLASS
-# ----------------------
-class_name = st.selectbox("Select Class", classes["ClassName"].unique())
-class_id = classes.loc[classes["ClassName"] == class_name, "ClassID"].iloc[0]
-
-# ----------------------
-# SELECT SUBJECT
-# ----------------------
 filtered_subjects = subjects[subjects["ClassID"] == class_id]
+subject_name = st.selectbox("Select Subject", filtered_subjects["SubjectName"])
+subject_id = filtered_subjects[filtered_subjects["SubjectName"] == subject_name]["SubjectID"].iloc[0]
 
-subject_name = st.selectbox("Select Subject", filtered_subjects["SubjectName"].unique())
-subject_id = filtered_subjects.loc[
-    filtered_subjects["SubjectName"] == subject_name, "SubjectID"
-].iloc[0]
-
-# ----------------------
-# SESSION CODE
-# ----------------------
-session_code = st.text_input("Enter Session Code").strip()
+session_code = st.text_input("Set Session Code")
+expiry = st.number_input("Session Validity (minutes)", value=30)
 
 if st.button("🚀 Activate Session"):
 
-    if not session_code:
-        st.error("Session code required")
-        st.stop()
-
-    # Create sessions file if missing
-    if not os.path.exists(SESSIONS_FILE):
-        pd.DataFrame(columns=[
-            "SessionCode","ClassID","SubjectID","CreatedAt"
-        ]).to_csv(SESSIONS_FILE, index=False)
-
-    sessions = pd.read_csv(SESSIONS_FILE)
-
-    # Prevent duplicate session codes
-    if session_code in sessions["SessionCode"].astype(str).values:
-        st.error("❌ Session code already active")
-        st.stop()
+    session_id = str(uuid.uuid4())[:8]
 
     new_session = {
-        "SessionCode": session_code,
+        "SessionID": session_id,
         "ClassID": class_id,
         "SubjectID": subject_id,
-        "CreatedAt": datetime.now().isoformat()
+        "SessionCode": session_code,
+        "CreatedAt": datetime.now().isoformat(),
+        "ExpiryMinutes": expiry,
+        "Active": True
     }
 
-    sessions = pd.concat([sessions, pd.DataFrame([new_session])], ignore_index=True)
-    sessions.to_csv(SESSIONS_FILE, index=False)
+    if os.path.exists(SESSIONS_FILE):
+        df = pd.read_csv(SESSIONS_FILE)
+        df = pd.concat([df, pd.DataFrame([new_session])])
+    else:
+        df = pd.DataFrame([new_session])
 
-    st.success("✅ Session activated successfully")
-    st.json(new_session)
+    df.to_csv(SESSIONS_FILE, index=False)
+
+    st.success(f"✅ Session Started\n\nSession Code: {session_code}")
