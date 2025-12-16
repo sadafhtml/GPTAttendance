@@ -21,18 +21,15 @@ if pwd != ADMIN_PASSWORD:
 
 st.success("✅ Logged in as Admin")
 
-# ---------------- SAFE LOAD ----------------
+# ---------------- SAFE LOAD FUNCTION ----------------
 def load_csv(path, required_cols):
     if os.path.exists(path):
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, dtype=str)
     else:
         df = pd.DataFrame()
-
-    # force columns
     for col in required_cols:
         if col not in df.columns:
             df[col] = ""
-
     return df[required_cols]
 
 sessions = load_csv(
@@ -50,7 +47,6 @@ subjects = load_csv(SUBJECTS_FILE, ["SubjectID","SubjectName","ClassID"])
 
 # ---------------- AUTO EXPIRE SESSIONS ----------------
 now = datetime.now()
-
 def is_active(row):
     try:
         created = datetime.fromisoformat(row["CreatedAt"])
@@ -74,18 +70,16 @@ tab1, tab2, tab3 = st.tabs([
 # ==================================================
 with tab1:
     st.subheader("All Sessions")
-
     if sessions.empty:
         st.info("No sessions available.")
         st.stop()
 
     view = sessions.copy()
 
-    # Merge safely
-    if "SubjectID" in view.columns:
+    # Merge safely with subjects and classes
+    if "SubjectID" in view.columns and not subjects.empty:
         view = view.merge(subjects, on="SubjectID", how="left")
-
-    if "ClassID" in view.columns:
+    if "ClassID" in view.columns and not classes.empty:
         view = view.merge(classes, on="ClassID", how="left")
 
     # Fill missing names
@@ -104,14 +98,11 @@ with tab1:
         "ExpiryMinutes",
         "Active"
     ]]
-
     st.dataframe(view, use_container_width=True)
 
     st.divider()
     st.subheader("⛔ Deactivate Session")
-
     active_sessions = view[view["Active"] == True]
-
     if active_sessions.empty:
         st.info("No active sessions.")
         st.stop()
@@ -120,28 +111,34 @@ with tab1:
         "Select Session Code",
         active_sessions["SessionCode"]
     )
-
     if st.button("Deactivate Selected Session"):
-        sessions.loc[
-            sessions["SessionCode"] == selected_code, "Active"
-        ] = False
+        sessions.loc[sessions["SessionCode"] == selected_code, "Active"] = "False"
         sessions.to_csv(SESSIONS_FILE, index=False)
         st.success(f"Session {selected_code} deactivated")
-        st.rerun()
+        st.experimental_rerun()
 
 # ==================================================
 # 📊 TAB 2 – ATTENDANCE REPORTS
 # ==================================================
 with tab2:
     st.subheader("Attendance Reports")
-
     if attendance.empty:
         st.info("No attendance recorded.")
         st.stop()
 
-    report = attendance.merge(sessions, on="SessionID", how="left")
-    report = report.merge(subjects, on="SubjectID", how="left")
-    report = report.merge(classes, on="ClassID", how="left")
+    # Safe merge for report
+    report = attendance.copy()
+    if "SessionID" in report.columns and not sessions.empty:
+        report = report.merge(sessions, on="SessionID", how="left")
+    if "SubjectID" in report.columns and not subjects.empty:
+        report = report.merge(subjects, on="SubjectID", how="left")
+    if "ClassID" in report.columns and not classes.empty:
+        report = report.merge(classes, on="ClassID", how="left")
+
+    # Fill missing columns
+    for col in ["SessionCode","SubjectName","ClassName"]:
+        if col not in report.columns:
+            report[col] = "—"
 
     report = report[[
         "Date",
@@ -150,7 +147,6 @@ with tab2:
         "ClassName",
         "RollNumber"
     ]]
-
     st.dataframe(report, use_container_width=True)
 
     st.download_button(
@@ -165,7 +161,6 @@ with tab2:
 # ==================================================
 with tab3:
     st.subheader("Students Master")
-
     if not os.path.exists(STUDENTS_FILE):
         st.error("Students.xlsx not found")
     else:
