@@ -1,136 +1,143 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 import os
 
-st.set_page_config(page_title="Admin Panel", layout="wide")
-st.title("🛠️ Admin Panel - Attendance System")
+st.set_page_config(page_title="Admin Dashboard", layout="wide")
+st.title("🧑‍💼 Admin Dashboard")
 
-# ----------------------
-# PASSWORD PROTECTION (Simple)
-# ----------------------
-PASSWORD = "admin123"  # change this
-pwd = st.text_input("Enter Admin Password", type="password")
-
-if pwd != PASSWORD:
-    st.warning("❌ Incorrect password")
-    st.stop()
-
-# ----------------------
-# FILE PATHS
-# ----------------------
-STUDENTS_FILE = "students.xlsx"
+# ---------------- FILE PATHS ----------------
+SESSIONS_FILE = "sessions.csv"
+ATTENDANCE_FILE = "attendance.csv"
+STUDENTS_FILE = "Students.xlsx"
 CLASSES_FILE = "classes.csv"
 SUBJECTS_FILE = "subjects.csv"
-ATTENDANCE_FILE = "attendance.csv"
 
-# ----------------------
-# LOAD FILES
-# ----------------------
-if os.path.exists(STUDENTS_FILE):
-    students = pd.read_excel(STUDENTS_FILE)
-else:
-    students = pd.DataFrame(columns=["RollNumber","StudentName","EnrollmentNumber","ClassID"])
+# ---------------- PASSWORD ----------------
+ADMIN_PASSWORD = "admin123"
 
-if os.path.exists(CLASSES_FILE):
-    classes = pd.read_csv(CLASSES_FILE)
-else:
-    classes = pd.DataFrame(columns=["ClassID","ClassName"])
+pwd = st.text_input("Enter Admin Password", type="password")
+if pwd != ADMIN_PASSWORD:
+    st.stop()
 
-if os.path.exists(SUBJECTS_FILE):
-    subjects = pd.read_csv(SUBJECTS_FILE)
-else:
-    subjects = pd.DataFrame(columns=["SubjectID","SubjectName","ClassID"])
+st.success("✅ Logged in as Admin")
 
-# ----------------------
-# TABS
-# ----------------------
-tab = st.tabs(["Students","Classes","Subjects","Attendance Download"])
+# ---------------- LOAD FILES SAFELY ----------------
+def load_csv(path, columns=None):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=columns if columns else [])
 
-# ----------------------
-# STUDENTS TAB
-# ----------------------
-with tab[0]:
-    st.subheader("👩‍🎓 Manage Students")
-    st.dataframe(students)
+sessions = load_csv(
+    SESSIONS_FILE,
+    ["SessionID","ClassID","SubjectID","SessionCode","CreatedAt","ExpiryMinutes","Active"]
+)
 
-    st.markdown("### Add New Student")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        new_roll = st.text_input("Roll Number", key="roll")
-    with col2:
-        new_name = st.text_input("Student Name", key="name")
-    with col3:
-        new_enroll = st.text_input("Enrollment Number", key="enroll")
-    with col4:
-        new_class = st.selectbox("Class", classes["ClassID"] if not classes.empty else [], key="class")
+attendance = load_csv(
+    ATTENDANCE_FILE,
+    ["Date","SessionID","RollNumber"]
+)
 
-    if st.button("➕ Add Student"):
-        if new_roll and new_name and new_enroll and new_class:
-            new_student = {
-                "RollNumber": new_roll,
-                "StudentName": new_name,
-                "EnrollmentNumber": new_enroll,
-                "ClassID": new_class
-            }
-            students = pd.concat([students, pd.DataFrame([new_student])], ignore_index=True)
-            students.to_excel(STUDENTS_FILE, index=False)
-            st.success("✅ Student added successfully")
-        else:
-            st.warning("Please fill all fields")
+classes = load_csv(CLASSES_FILE, ["ClassID","ClassName"])
+subjects = load_csv(SUBJECTS_FILE, ["SubjectID","SubjectName","ClassID"])
 
-# ----------------------
-# CLASSES TAB
-# ----------------------
-with tab[1]:
-    st.subheader("🏫 Manage Classes")
-    st.dataframe(classes)
+# ---------------- AUTO EXPIRE SESSIONS ----------------
+now = datetime.now()
 
-    st.markdown("### Add New Class")
-    new_class_id = st.text_input("Class ID", key="classid")
-    new_class_name = st.text_input("Class Name", key="classname")
+if not sessions.empty:
+    def is_active(row):
+        created = datetime.fromisoformat(row["CreatedAt"])
+        return now <= created + timedelta(minutes=int(row["ExpiryMinutes"]))
 
-    if st.button("➕ Add Class"):
-        if new_class_id and new_class_name:
-            classes = pd.concat([classes, pd.DataFrame([{"ClassID":new_class_id,"ClassName":new_class_name}])], ignore_index=True)
-            classes.to_csv(CLASSES_FILE, index=False)
-            st.success("✅ Class added successfully")
-        else:
-            st.warning("Please fill all fields")
+    sessions["Active"] = sessions.apply(is_active, axis=1)
+    sessions.to_csv(SESSIONS_FILE, index=False)
 
-# ----------------------
-# SUBJECTS TAB
-# ----------------------
-with tab[2]:
-    st.subheader("📚 Manage Subjects")
-    st.dataframe(subjects)
+# ===================== TABS =====================
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📌 Active Sessions",
+    "📊 Attendance Reports",
+    "🎓 Students",
+    "⚙️ Master Data"
+])
 
-    st.markdown("### Add New Subject")
-    new_sub_id = st.text_input("Subject ID", key="subid")
-    new_sub_name = st.text_input("Subject Name", key="subname")
-    new_sub_class = st.selectbox("Class for Subject", classes["ClassID"] if not classes.empty else [], key="subclass")
+# ==================================================
+# 📌 TAB 1 – ACTIVE SESSIONS
+# ==================================================
+with tab1:
+    st.subheader("Active & Expired Sessions")
 
-    if st.button("➕ Add Subject"):
-        if new_sub_id and new_sub_name and new_sub_class:
-            subjects = pd.concat([subjects, pd.DataFrame([{"SubjectID":new_sub_id,"SubjectName":new_sub_name,"ClassID":new_sub_class}])], ignore_index=True)
-            subjects.to_csv(SUBJECTS_FILE, index=False)
-            st.success("✅ Subject added successfully")
-        else:
-            st.warning("Please fill all fields")
-
-# ----------------------
-# ATTENDANCE DOWNLOAD TAB
-# ----------------------
-with tab[3]:
-    st.subheader("📥 Download Attendance")
-    if os.path.exists(ATTENDANCE_FILE):
-        attendance = pd.read_csv(ATTENDANCE_FILE)
-        st.dataframe(attendance)
-        csv = attendance.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="💾 Download Attendance CSV",
-            data=csv,
-            file_name=f"attendance_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime='text/csv'
-        )
+    if sessions.empty:
+        st.info("No sessions created yet.")
     else:
-        st.info("No attendance data found yet")
+        st.dataframe(sessions, use_container_width=True)
+
+        deactivate_id = st.selectbox(
+            "Deactivate Session",
+            ["None"] + sessions["SessionID"].tolist()
+        )
+
+        if deactivate_id != "None" and st.button("⛔ Deactivate Selected Session"):
+            sessions.loc[sessions["SessionID"] == deactivate_id, "Active"] = False
+            sessions.to_csv(SESSIONS_FILE, index=False)
+            st.success("Session deactivated")
+            st.experimental_rerun()
+
+# ==================================================
+# 📊 TAB 2 – ATTENDANCE REPORTS
+# ==================================================
+with tab2:
+    st.subheader("Attendance Reports")
+
+    if attendance.empty:
+        st.info("No attendance recorded yet.")
+    else:
+        merged = attendance.merge(
+            sessions,
+            on="SessionID",
+            how="left"
+        )
+
+        merged = merged.merge(classes, on="ClassID", how="left")
+        merged = merged.merge(subjects, on="SubjectID", how="left")
+
+        st.dataframe(merged, use_container_width=True)
+
+        csv = merged.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download Attendance CSV",
+            csv,
+            "attendance_report.csv",
+            "text/csv"
+        )
+
+# ==================================================
+# 🎓 TAB 3 – STUDENTS
+# ==================================================
+with tab3:
+    st.subheader("Student Master (Read-only)")
+
+    if not os.path.exists(STUDENTS_FILE):
+        st.error("Students.xlsx not found")
+    else:
+        students = pd.read_excel(STUDENTS_FILE)
+        st.dataframe(students, use_container_width=True)
+
+        st.info("✏️ Student editing is Excel-based for safety")
+
+# ==================================================
+# ⚙️ TAB 4 – MASTER DATA
+# ==================================================
+with tab4:
+    st.subheader("Classes & Subjects")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### Classes")
+        st.dataframe(classes, use_container_width=True)
+
+    with col2:
+        st.markdown("### Subjects")
+        st.dataframe(subjects, use_container_width=True)
+
+    st.info("✏️ Edit master data via CSV files")
