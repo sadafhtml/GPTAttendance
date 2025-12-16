@@ -4,64 +4,66 @@ from datetime import datetime
 import uuid
 import os
 
-st.set_page_config(page_title="Admin – Create Session", layout="centered")
-st.title("🛠️ Admin Dashboard – Create Session")
+st.set_page_config(page_title="Admin Dashboard", layout="wide")
+st.title("🛠️ Admin Dashboard – Session Management")
 
 CLASSES_FILE = "classes.csv"
 SUBJECTS_FILE = "subjects.csv"
 SESSIONS_FILE = "sessions.csv"
 
 # ----------------------
-# LOAD MASTER DATA
+# LOAD MASTER FILES
 # ----------------------
-if not os.path.exists(CLASSES_FILE) or not os.path.exists(SUBJECTS_FILE):
-    st.error("❌ classes.csv or subjects.csv missing")
-    st.stop()
+for file in [CLASSES_FILE, SUBJECTS_FILE]:
+    if not os.path.exists(file):
+        st.error(f"❌ Missing required file: {file}")
+        st.stop()
 
 classes = pd.read_csv(CLASSES_FILE, dtype=str)
 subjects = pd.read_csv(SUBJECTS_FILE, dtype=str)
 
 # ----------------------
-# SELECT CLASS
+# CREATE SESSION (ADMIN ACTION)
 # ----------------------
-class_name = st.selectbox("Select Class", classes["ClassName"])
-class_row = classes[classes["ClassName"] == class_name].iloc[0]
-class_id = class_row["ClassID"]
+st.subheader("➕ Create / Activate Session")
 
-# ----------------------
-# SELECT SUBJECT (FILTERED)
-# ----------------------
-filtered_subjects = subjects[subjects["ClassID"] == class_id]
+col1, col2, col3 = st.columns(3)
 
-if filtered_subjects.empty:
-    st.error("❌ No subjects mapped to this class")
-    st.stop()
+with col1:
+    class_name = st.selectbox("Class", classes["ClassName"])
+    class_id = classes.loc[
+        classes["ClassName"] == class_name, "ClassID"
+    ].values[0]
 
-subject_name = st.selectbox("Select Subject", filtered_subjects["SubjectName"])
-subject_row = filtered_subjects[filtered_subjects["SubjectName"] == subject_name].iloc[0]
-subject_id = subject_row["SubjectID"]
+with col2:
+    filtered_subjects = subjects[subjects["ClassID"] == class_id]
+    if filtered_subjects.empty:
+        st.error("❌ No subjects mapped to this class")
+        st.stop()
 
-# ----------------------
-# SESSION SETTINGS
-# ----------------------
-session_code = st.text_input("Session Code (students will enter this)")
-expiry = st.number_input("Session Validity (minutes)", min_value=5, max_value=180, value=30)
+    subject_name = st.selectbox("Subject", filtered_subjects["SubjectName"])
+    subject_id = filtered_subjects.loc[
+        filtered_subjects["SubjectName"] == subject_name, "SubjectID"
+    ].values[0]
 
-# ----------------------
-# CREATE SESSION
-# ----------------------
+with col3:
+    session_code = st.text_input("Session Code")
+    expiry_minutes = st.number_input(
+        "Validity (minutes)", min_value=5, max_value=180, value=30
+    )
+
 if st.button("🚀 Activate Session"):
-
     if not session_code.strip():
         st.error("❌ Session code cannot be empty")
         st.stop()
 
-    # Ensure sessions file exists
+    # Create sessions file if not exists
     if not os.path.exists(SESSIONS_FILE):
         pd.DataFrame(columns=[
             "SessionID",
             "SessionCode",
             "ClassID",
+            "ClassName",
             "SubjectID",
             "SubjectName",
             "CreatedAt",
@@ -71,26 +73,70 @@ if st.button("🚀 Activate Session"):
 
     sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
 
-    # 🔒 Deactivate existing active session with same code
+    # Deactivate old active sessions with same code
     sessions.loc[
-        (sessions["SessionCode"] == session_code) & (sessions["Active"] == "True"),
+        (sessions["SessionCode"] == session_code) &
+        (sessions["Active"] == "True"),
         "Active"
     ] = "False"
 
-    # ✅ Create new session row
     new_session = {
         "SessionID": str(uuid.uuid4()),
         "SessionCode": session_code.strip(),
         "ClassID": class_id,
+        "ClassName": class_name,
         "SubjectID": subject_id,
         "SubjectName": subject_name,
         "CreatedAt": datetime.now().isoformat(),
-        "ExpiryMinutes": str(expiry),
+        "ExpiryMinutes": str(expiry_minutes),
         "Active": "True"
     }
 
-    sessions = pd.concat([sessions, pd.DataFrame([new_session])], ignore_index=True)
+    sessions = pd.concat(
+        [sessions, pd.DataFrame([new_session])],
+        ignore_index=True
+    )
+
     sessions.to_csv(SESSIONS_FILE, index=False)
 
     st.success("✅ Session activated successfully")
-    st.info(f"📌 Session Code: **{session_code}**")
+
+# ----------------------
+# VIEW & DEACTIVATE SESSIONS
+# ----------------------
+st.divider()
+st.subheader("📋 Active Sessions")
+
+if os.path.exists(SESSIONS_FILE):
+    sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
+
+    active_sessions = sessions[sessions["Active"] == "True"]
+
+    if active_sessions.empty:
+        st.info("No active sessions")
+    else:
+        st.dataframe(
+            active_sessions[[
+                "SessionCode",
+                "ClassName",
+                "SubjectName",
+                "CreatedAt",
+                "ExpiryMinutes"
+            ]],
+            use_container_width=True
+        )
+
+        deactivate_code = st.selectbox(
+            "Deactivate Session (by Session Code)",
+            active_sessions["SessionCode"]
+        )
+
+        if st.button("🛑 Deactivate Selected Session"):
+            sessions.loc[
+                sessions["SessionCode"] == deactivate_code,
+                "Active"
+            ] = "False"
+
+            sessions.to_csv(SESSIONS_FILE, index=False)
+            st.success("✅ Session deactivated")
+            st.rerun()
