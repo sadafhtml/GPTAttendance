@@ -3,6 +3,47 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
+if "locked_session" not in st.session_state:
+    st.session_state.locked_session = None
+
+if "locked_roll" not in st.session_state:
+    st.session_state.locked_roll = None
+
+# If this browser has already submitted attendance for this session
+if st.session_state.locked_session == session["SessionID"]:
+    st.success(
+        f"✅ Attendance already submitted for Roll No: {st.session_state.locked_roll}"
+    )
+    st.stop()
+
+roll = st.selectbox(
+    "Select Roll Number",
+    students["RollNumber"].astype(str)
+)
+
+if st.button("✅ Submit Attendance"):
+    new_row = {
+        "Date": today,
+        "SessionID": session["SessionID"],
+        "RollNumber": roll
+    }
+
+    attendance = pd.concat(
+        [attendance, pd.DataFrame([new_row])],
+        ignore_index=True
+    )
+
+    attendance.to_csv(ATTENDANCE_FILE, index=False)
+
+    # 🔐 LOCK THIS DEVICE FOR THIS SESSION
+    st.session_state.locked_session = session["SessionID"]
+    st.session_state.locked_roll = roll
+
+    st.success("🎉 Attendance marked successfully")
+    st.stop()
+
+
+
 st.set_page_config(page_title="Student Attendance", layout="centered")
 st.title("🧑‍🎓 Student Attendance")
 
