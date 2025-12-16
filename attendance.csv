@@ -1,1 +1,1 @@
-AttendanceKey,Date,ClassID,SubjectID,SessionCode,RollNumber,StudentName,EnrollmentNumber
+Date,SessionID,ClassID,ClassName,SubjectID,SubjectName,SessionCode,RollNumber,StudentName,EnrollmentNumber
