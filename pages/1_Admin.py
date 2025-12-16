@@ -13,7 +13,7 @@ STUDENTS_FILE = "Students.xlsx"
 CLASSES_FILE = "classes.csv"
 SUBJECTS_FILE = "subjects.csv"
 
-# ---------------- PASSWORD ----------------
+# ---------------- ADMIN LOGIN ----------------
 ADMIN_PASSWORD = "admin123"
 
 pwd = st.text_input("Enter Admin Password", type="password")
@@ -22,11 +22,11 @@ if pwd != ADMIN_PASSWORD:
 
 st.success("✅ Logged in as Admin")
 
-# ---------------- LOAD FILES SAFELY ----------------
-def load_csv(path, columns=None):
+# ---------------- SAFE LOADERS ----------------
+def load_csv(path, columns):
     if os.path.exists(path):
         return pd.read_csv(path)
-    return pd.DataFrame(columns=columns if columns else [])
+    return pd.DataFrame(columns=columns)
 
 sessions = load_csv(
     SESSIONS_FILE,
@@ -41,46 +41,73 @@ attendance = load_csv(
 classes = load_csv(CLASSES_FILE, ["ClassID","ClassName"])
 subjects = load_csv(SUBJECTS_FILE, ["SubjectID","SubjectName","ClassID"])
 
-# ---------------- AUTO EXPIRE SESSIONS ----------------
+# ---------------- AUTO-EXPIRE SESSIONS ----------------
 now = datetime.now()
 
 if not sessions.empty:
-    def is_active(row):
+    def check_active(row):
         created = datetime.fromisoformat(row["CreatedAt"])
         return now <= created + timedelta(minutes=int(row["ExpiryMinutes"]))
 
-    sessions["Active"] = sessions.apply(is_active, axis=1)
+    sessions["Active"] = sessions.apply(check_active, axis=1)
     sessions.to_csv(SESSIONS_FILE, index=False)
 
 # ===================== TABS =====================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📌 Active Sessions",
+tab1, tab2, tab3 = st.tabs([
+    "📌 Sessions",
     "📊 Attendance Reports",
-    "🎓 Students",
-    "⚙️ Master Data"
+    "🎓 Students"
 ])
 
 # ==================================================
-# 📌 TAB 1 – ACTIVE SESSIONS
+# 📌 TAB 1 – SESSIONS (IMPROVED)
 # ==================================================
 with tab1:
-    st.subheader("Active & Expired Sessions")
+    st.subheader("All Sessions")
 
     if sessions.empty:
-        st.info("No sessions created yet.")
-    else:
-        st.dataframe(sessions, use_container_width=True)
+        st.info("No sessions found.")
+        st.stop()
 
-        deactivate_id = st.selectbox(
-            "Deactivate Session",
-            ["None"] + sessions["SessionID"].tolist()
-        )
+    # Merge for display
+    view = sessions.merge(subjects, on="SubjectID", how="left")
+    view = view.merge(classes, on="ClassID", how="left")
 
-        if deactivate_id != "None" and st.button("⛔ Deactivate Selected Session"):
-            sessions.loc[sessions["SessionID"] == deactivate_id, "Active"] = False
-            sessions.to_csv(SESSIONS_FILE, index=False)
-            st.success("Session deactivated")
-            st.experimental_rerun()
+    # Reorder columns (SessionCode FIRST)
+    view = view[[
+        "SessionCode",
+        "SubjectName",
+        "ClassName",
+        "SessionID",
+        "CreatedAt",
+        "ExpiryMinutes",
+        "Active"
+    ]]
+
+    st.dataframe(view, use_container_width=True)
+
+    st.divider()
+    st.subheader("⛔ Deactivate Session")
+
+    active_sessions = view[view["Active"] == True]
+
+    if active_sessions.empty:
+        st.info("No active sessions to deactivate.")
+        st.stop()
+
+    selected_code = st.selectbox(
+        "Select Session Code to Deactivate",
+        active_sessions["SessionCode"]
+    )
+
+    if st.button("Deactivate Selected Session"):
+        sessions.loc[
+            sessions["SessionCode"] == selected_code, "Active"
+        ] = False
+
+        sessions.to_csv(SESSIONS_FILE, index=False)
+        st.success(f"Session `{selected_code}` deactivated")
+        st.rerun()
 
 # ==================================================
 # 📊 TAB 2 – ATTENDANCE REPORTS
@@ -89,32 +116,36 @@ with tab2:
     st.subheader("Attendance Reports")
 
     if attendance.empty:
-        st.info("No attendance recorded yet.")
-    else:
-        merged = attendance.merge(
-            sessions,
-            on="SessionID",
-            how="left"
-        )
+        st.info("No attendance data available.")
+        st.stop()
 
-        merged = merged.merge(classes, on="ClassID", how="left")
-        merged = merged.merge(subjects, on="SubjectID", how="left")
+    report = attendance.merge(sessions, on="SessionID", how="left")
+    report = report.merge(subjects, on="SubjectID", how="left")
+    report = report.merge(classes, on="ClassID", how="left")
 
-        st.dataframe(merged, use_container_width=True)
+    report = report[[
+        "Date",
+        "SessionCode",
+        "SubjectName",
+        "ClassName",
+        "RollNumber"
+    ]]
 
-        csv = merged.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download Attendance CSV",
-            csv,
-            "attendance_report.csv",
-            "text/csv"
-        )
+    st.dataframe(report, use_container_width=True)
+
+    csv = report.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Download Attendance CSV",
+        csv,
+        "attendance_report.csv",
+        "text/csv"
+    )
 
 # ==================================================
 # 🎓 TAB 3 – STUDENTS
 # ==================================================
 with tab3:
-    st.subheader("Student Master (Read-only)")
+    st.subheader("Students Master Data")
 
     if not os.path.exists(STUDENTS_FILE):
         st.error("Students.xlsx not found")
@@ -122,22 +153,4 @@ with tab3:
         students = pd.read_excel(STUDENTS_FILE)
         st.dataframe(students, use_container_width=True)
 
-        st.info("✏️ Student editing is Excel-based for safety")
-
-# ==================================================
-# ⚙️ TAB 4 – MASTER DATA
-# ==================================================
-with tab4:
-    st.subheader("Classes & Subjects")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### Classes")
-        st.dataframe(classes, use_container_width=True)
-
-    with col2:
-        st.markdown("### Subjects")
-        st.dataframe(subjects, use_container_width=True)
-
-    st.info("✏️ Edit master data via CSV files")
+        st.info("✏️ Edit students via Excel file")
