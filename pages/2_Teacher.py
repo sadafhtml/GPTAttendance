@@ -4,6 +4,23 @@ from datetime import datetime
 import uuid
 import os
 
+# Ensure sessions.csv exists and has all required columns
+REQUIRED_COLUMNS = [
+    "SessionID","TeacherID","ClassID","ClassName",
+    "SubjectID","SubjectName","SessionCode",
+    "CreatedAt","ExpiryMinutes","Active"
+]
+
+if not os.path.exists(SESSIONS_FILE):
+    pd.DataFrame(columns=REQUIRED_COLUMNS).to_csv(SESSIONS_FILE, index=False)
+
+sessions = pd.read_csv(SESSIONS_FILE, dtype=str)
+
+# If any required column is missing, add it empty
+for col in REQUIRED_COLUMNS:
+    if col not in sessions.columns:
+        sessions[col] = ""
+
 st.set_page_config(page_title="Teacher Panel", layout="wide")
 st.title("👩‍🏫 Teacher Panel")
 
